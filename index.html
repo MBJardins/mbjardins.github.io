@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sistema de Alimentação</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0; padding: 0;
+      background: #f2f2f2;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      text-align: center;
+      padding: 2rem;
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 1.5rem;
+    }
+    .media-group {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .media-group > * {
+      flex: 1 1 300px;
+      max-width: 400px;
+    }
+    .video-container h2,
+    #preview-container h2 {
+      margin-bottom: 0.5rem;
+      color: #333;
+    }
+    video,
+    #preview {
+      width: 100%;
+      aspect-ratio: 16/9;
+      border-radius: 8px;
+      object-fit: cover;
+    }
+    #preview-container {
+      display: none;
+    }
+    .btn {
+      display: inline-block;
+      margin: 1rem .5rem;
+      padding: .75rem 1.5rem;
+      background: #007BFF;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    .btn:hover { background: #0056b3; }
+    .modal { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:none; align-items:center; justify-content:center; }
+    .modal.active { display:flex; }
+    .modal-content { background:#fff; padding:2rem; border-radius:8px; width:90%; max-width:400px; text-align:left; }
+    .modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; }
+    .close { font-size:1.5rem; cursor:pointer; }
+    input[type="text"] { width:100%; padding:.5rem; margin-bottom:1rem; border:1px solid #ccc; border-radius:4px; }
+    #scanner { width:100%; height:200px; margin-bottom:1rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Sistema de Alimentação</h1>
+    <div class="media-group">
+      <div class="video-container">
+        <h2>Imagem atual</h2>
+        <video id="video" autoplay playsinline></video>
+      </div>
+      <div id="preview-container">
+        <h2>Prévia da Foto</h2>
+        <img id="preview" alt="Foto capturada"/>
+        <div>
+          <button id="retry" class="btn">Refazer</button>
+          <button id="send"  class="btn">Enviar</button>
+        </div>
+      </div>
+    </div>
+    <button id="identify" class="btn">Identificar Aluno</button>
+  </div>
+  <div id="modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Informe o Código</h2>
+        <span id="close" class="close">&times;</span>
+      </div>
+      <div id="scanner"></div>
+      <input type="text" id="manual" placeholder="Digite o código do aluno"/>
+      <button id="confirm" class="btn">Confirmar</button>
+    </div>
+  </div>
+  <script type="module">
+    import QrScanner from 'https://unpkg.com/qr-scanner@1.4.2/qr-scanner.min.js';
+    QrScanner.WORKER_PATH = 'https://unpkg.com/qr-scanner@1.4.2/qr-scanner-worker.min.js';
+
+    const video = document.getElementById('video');
+    const modal = document.getElementById('modal');
+    const scannerElem = document.getElementById('scanner');
+    const manualInput = document.getElementById('manual');
+    const confirmBtn = document.getElementById('confirm');
+    const closeBtn = document.getElementById('close');
+    const identifyBtn = document.getElementById('identify');
+    const previewContainer = document.getElementById('preview-container');
+    const previewImg = document.getElementById('preview');
+    const retryBtn = document.getElementById('retry');
+    const sendBtn = document.getElementById('send');
+    const webhookUrl = 'https://teste.maplebearjardins.pro/webhook-test/ca6df932-b6a3-4798-a01d-2559d4f92806';
+    let qrScanner, currentCode = '', imageData = '';
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        video.srcObject = stream;
+      } catch (e) {
+        alert('Erro ao acessar a câmera: ' + e.message);
+      }
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'i') identifyBtn.click();
+      if (e.key === 'c') confirmBtn.click();
+      if (e.key === 'r') retryBtn.click();
+      if (e.key === 'e') sendBtn.click();
+    });
+
+    identifyBtn.onclick = () => {
+      manualInput.value = '';
+      modal.classList.add('active');
+      qrScanner = new QrScanner(scannerElem, result => { currentCode = result; capture(); closeModal(); }, { preferredCamera: 'environment', highlightScanRegion: true });
+      qrScanner.start();
+    };
+    confirmBtn.onclick = () => {
+      if (!manualInput.value.trim()) return alert('Digite o código ou use QR');
+      currentCode = manualInput.value.trim(); capture(); closeModal();
+    };
+    closeBtn.onclick = () => { closeModal(); qrScanner && qrScanner.stop(); };
+    retryBtn.onclick = () => {
+      previewContainer.style.display = 'none';
+      identifyBtn.style.display = 'inline-block';
+    };
+    sendBtn.onclick = async () => {
+      try {
+        const res = await fetch(webhookUrl, { method: 'POST', mode: 'cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ codigo: currentCode, foto: imageData, timestamp: new Date().toISOString() }) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+        alert('Dados enviados com sucesso!');
+      } catch (e) {
+        alert('Erro ao enviar: ' + e.message);
+      }
+    };
+    function closeModal() { modal.classList.remove('active'); }
+    function capture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      imageData = canvas.toDataURL('image/png');
+      previewImg.src = imageData;
+      previewContainer.style.display = 'block';
+      identifyBtn.style.display = 'none';
+    }
+  </script>
+</body>
+</html>
